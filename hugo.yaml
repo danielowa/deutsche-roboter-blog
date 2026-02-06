@@ -3,7 +3,8 @@ languageCode: de
 defaultContentLanguage: de
 title: Deutsche Roboter Blog
 theme: PaperMod
-paginate: 10
+pagination:
+  pagerSize: 10
 
 buildDrafts: false
 buildFuture: false
