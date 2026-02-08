@@ -8,6 +8,7 @@ Four-phase pipeline:
 4. PUBLISH - Generate Hugo markdown, git commit & push
 """
 
+import argparse
 import os
 import re
 import subprocess
@@ -259,8 +260,21 @@ def git_commit_and_push(filepath: Path, title: str) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(description="Generate a daily robotics blog post.")
+    parser.add_argument(
+        "--no-git",
+        action="store_true",
+        help="Skip git commit and push (useful when running inside CI)",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
     """Run the four-phase pipeline."""
+    args = parse_args()
+
     print(f"\n{'='*60}")
     print(f"Deutsche Roboter Blog - Post Generator")
     print(f"Date: {get_today_str()}")
@@ -303,12 +317,15 @@ def main() -> int:
     print("\n[4/4] Publishing...")
     filepath = create_post(topic_data, article_text)
 
-    try:
-        git_commit_and_push(filepath, topic_data.get("topic", ""))
-    except subprocess.CalledProcessError as e:
-        print(f"  WARNING: Git operation failed: {e}")
-        print("  The post was created locally but not pushed.")
-        return 1
+    if args.no_git:
+        print("  --no-git: skipping git commit and push.")
+    else:
+        try:
+            git_commit_and_push(filepath, topic_data.get("topic", ""))
+        except subprocess.CalledProcessError as e:
+            print(f"  WARNING: Git operation failed: {e}")
+            print("  The post was created locally but not pushed.")
+            return 1
 
     print(f"\nDone! Post published successfully.")
     return 0
