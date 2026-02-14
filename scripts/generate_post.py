@@ -13,13 +13,14 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone, timedelta
+import urllib.request
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import anthropic
 import feedparser
 import yaml
-
 from config import (
     ARTICLE_WRITING_PROMPT,
     FETCH_TIMEOUT,
@@ -28,32 +29,32 @@ from config import (
     MODEL,
     RSS_FEEDS,
     TOPIC_SELECTION_PROMPT,
+    TOPIC_SELECTION_SYSTEM,
 )
 
 # Project root (one level up from scripts/)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONTENT_DIR = PROJECT_ROOT / "content" / "posts"
 
-# Timezone for Berlin
-CET = timezone(timedelta(hours=1))
+# Timezone for Berlin (handles CET/CEST automatically)
+BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
 
 def get_today_str() -> str:
-    """Return today's date as YYYY-MM-DD in CET."""
-    return datetime.now(CET).strftime("%Y-%m-%d")
+    """Return today's date as YYYY-MM-DD in Berlin time."""
+    return datetime.now(BERLIN_TZ).strftime("%Y-%m-%d")
 
 
 def post_exists_for_today() -> bool:
     """Check if a post for today already exists."""
     today = get_today_str()
-    for f in CONTENT_DIR.glob(f"{today}-*.md"):
-        return True
-    return False
+    return any(CONTENT_DIR.glob(f"{today}-*.md"))
 
 
 # ---------------------------------------------------------------------------
 # Phase 1: FETCH
 # ---------------------------------------------------------------------------
+
 
 def fetch_rss_feeds() -> list[dict]:
     """Fetch articles from all configured RSS feeds.
@@ -67,10 +68,13 @@ def fetch_rss_feeds() -> list[dict]:
         url = feed_cfg["url"]
         try:
             print(f"  Fetching {name}...")
-            feed = feedparser.parse(
+            req = urllib.request.Request(
                 url,
-                request_headers={"User-Agent": "DeutscheRoboterBlog/1.0"},
+                headers={"User-Agent": "DeutscheRoboterBlog/1.0"},
             )
+            with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+                raw_feed = resp.read()
+            feed = feedparser.parse(raw_feed)
             if feed.bozo and not feed.entries:
                 print(f"  WARNING: {name} returned no entries (bozo={feed.bozo})")
                 continue
@@ -114,16 +118,14 @@ def format_news_for_prompt(articles: list[dict]) -> str:
         summary = a["summary"][:200] + "..." if len(a["summary"]) > 200 else a["summary"]
         # Strip HTML tags from summary
         summary = re.sub(r"<[^>]+>", "", summary).strip()
-        lines.append(
-            f"{i}. [{a['source']}] {a['title']}\n"
-            f"   {summary}\n"
-        )
+        lines.append(f"{i}. [{a['source']}] {a['title']}\n   {summary}\n")
     return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
 # Phase 2: ANALYZE (topic selection)
 # ---------------------------------------------------------------------------
+
 
 def select_topic(client: anthropic.Anthropic, articles: list[dict]) -> dict:
     """Use Claude to select the best topic from fetched news."""
@@ -134,6 +136,7 @@ def select_topic(client: anthropic.Anthropic, articles: list[dict]) -> dict:
     response = client.messages.create(
         model=MODEL,
         max_tokens=500,
+        system=TOPIC_SELECTION_SYSTEM,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -143,14 +146,45 @@ def select_topic(client: anthropic.Anthropic, articles: list[dict]) -> dict:
     yaml_match = re.search(r"```yaml\s*\n(.*?)```", response_text, re.DOTALL)
     yaml_str = yaml_match.group(1) if yaml_match else response_text
 
-    topic_data = yaml.safe_load(yaml_str)
+    try:
+        topic_data = yaml.safe_load(yaml_str)
+        if not isinstance(topic_data, dict):
+            raise ValueError(f"Expected dict, got {type(topic_data).__name__}")
+    except (yaml.YAMLError, ValueError) as e:
+        print(f"  WARNING: YAML parsing failed ({e}), attempting regex fallback...")
+        topic_data = _parse_topic_fallback(response_text)
+
     print(f"  Selected topic: {topic_data.get('topic', 'UNKNOWN')}")
     return topic_data
+
+
+def _parse_topic_fallback(text: str) -> dict:
+    """Fallback parser that extracts topic fields via regex when YAML parsing fails."""
+
+    def _extract(key: str) -> str:
+        match = re.search(rf'{key}:\s*"?([^"\n]+)"?', text)
+        return match.group(1).strip().strip('"') if match else ""
+
+    # Extract list fields (sources, tags)
+    def _extract_list(key: str) -> list[str]:
+        block = re.search(rf"{key}:\s*\n((?:\s*-\s*.+\n?)+)", text)
+        if not block:
+            return []
+        return [item.strip().strip('"').strip("'") for item in re.findall(r'-\s*"?([^"\n]+)"?', block.group(1))]
+
+    return {
+        "topic": _extract("topic") or "Robotik-News des Tages",
+        "angle": _extract("angle"),
+        "sources": _extract_list("sources"),
+        "tags": _extract_list("tags") or ["Robotik"],
+        "category": _extract("category") or "Allgemein",
+    }
 
 
 # ---------------------------------------------------------------------------
 # Phase 3: WRITE
 # ---------------------------------------------------------------------------
+
 
 def write_article(client: anthropic.Anthropic, topic_data: dict) -> str:
     """Use Claude to write a deep-dive article in German."""
@@ -177,12 +211,18 @@ def write_article(client: anthropic.Anthropic, topic_data: dict) -> str:
 # Phase 4: PUBLISH
 # ---------------------------------------------------------------------------
 
+
 def slugify(text: str) -> str:
     """Create a URL-friendly slug from German text."""
     # Transliterate common German characters
     replacements = {
-        "ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss",
-        "Ä": "Ae", "Ö": "Oe", "Ü": "Ue",
+        "ä": "ae",
+        "ö": "oe",
+        "ü": "ue",
+        "ß": "ss",
+        "Ä": "Ae",
+        "Ö": "Oe",
+        "Ü": "Ue",
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
@@ -208,7 +248,7 @@ def create_post(topic_data: dict, article_text: str) -> Path:
     # Build frontmatter
     frontmatter = {
         "title": title,
-        "date": datetime.now(CET).strftime("%Y-%m-%dT%H:%M:%S+01:00"),
+        "date": datetime.now(BERLIN_TZ).isoformat(timespec="seconds"),
         "draft": False,
         "tags": tags,
         "categories": [category],
@@ -260,6 +300,7 @@ def git_commit_and_push(filepath: Path, title: str) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Generate a daily robotics blog post.")
@@ -275,10 +316,10 @@ def main() -> int:
     """Run the four-phase pipeline."""
     args = parse_args()
 
-    print(f"\n{'='*60}")
-    print(f"Deutsche Roboter Blog - Post Generator")
+    print(f"\n{'=' * 60}")
+    print("Deutsche Roboter Blog - Post Generator")
     print(f"Date: {get_today_str()}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Check for duplicate
     if post_exists_for_today():
@@ -327,7 +368,7 @@ def main() -> int:
             print("  The post was created locally but not pushed.")
             return 1
 
-    print(f"\nDone! Post published successfully.")
+    print("\nDone! Post published successfully.")
     return 0
 
 

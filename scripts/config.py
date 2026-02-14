@@ -3,6 +3,9 @@
 # Claude model to use (Sonnet 4.5 for cost efficiency: ~$0.03/day)
 MODEL = "claude-sonnet-4-5-20250929"
 
+# Minimum word count for a generated article to be published
+MIN_ARTICLE_WORDS = 400
+
 # RSS feeds to fetch robotics news from
 RSS_FEEDS = [
     {
@@ -48,6 +51,19 @@ MAX_TOTAL_ARTICLES = 50
 # RSS fetch timeout in seconds
 FETCH_TIMEOUT = 15
 
+# System messages for Claude API calls
+TOPIC_SELECTION_SYSTEM = (
+    "You are a robotics news analyst for a German-language blog. "
+    "Always respond with valid YAML in the exact format requested. "
+    "Do not include any text outside the YAML block."
+)
+
+ARTICLE_WRITING_SYSTEM = (
+    "You are a German-language robotics journalist writing for 'Deutsche Roboter Blog'. "
+    "Write informative, well-structured articles in German. "
+    "Never include frontmatter, title headings, or meta-commentary about the article itself."
+)
+
 # Topic selection prompt
 TOPIC_SELECTION_PROMPT = """\
 Du bist ein erfahrener Technik-Redakteur für einen deutschen Robotik-Blog.
@@ -83,13 +99,14 @@ Hier sind die aktuellen Nachrichten:
 
 # Article writing prompt
 ARTICLE_WRITING_PROMPT = """\
-Du bist ein erfahrener Technik-Journalist, der tiefgehende Artikel über Robotik auf Deutsch schreibt.
-
 Schreibe einen Blog-Artikel zum folgenden Thema:
 
 **Thema**: {topic}
 **Blickwinkel**: {angle}
 **Quellen-Kontext**: {sources}
+
+**Hintergrundinformationen aus aktuellen Nachrichtenquellen**:
+{source_summaries}
 
 Anforderungen:
 - Sprache: Deutsch (natürlich, flüssig, nicht übersetzt klingend)
@@ -102,6 +119,7 @@ Anforderungen:
 - Verwende KEINE Emojis
 - Schreibe KEINE Meta-Kommentare über den Artikel selbst
 - Der Artikel soll eigenständig sein und nicht auf die Quellen verlinken
+- Nutze die Hintergrundinformationen, um den Artikel mit konkreten Details und Fakten anzureichern
 
 Antworte NUR mit dem Artikeltext in Markdown (ohne Frontmatter, ohne Titel-Überschrift).
 """

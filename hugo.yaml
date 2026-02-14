@@ -10,6 +10,15 @@ buildDrafts: false
 buildFuture: false
 buildExpired: false
 
+taxonomies:
+  tag: tags
+  category: categories
+
+sitemap:
+  changefreq: daily
+  priority: 0.5
+  filename: sitemap.xml
+
 minify:
   disableXML: true
   minifyOutput: true
@@ -26,6 +35,9 @@ params:
     - Technik
     - Deutschland
   author: Deutsche Roboter Blog
+  locale: de_DE
+  images:
+    - /og-default.png
   defaultTheme: auto
   ShowReadingTime: true
   ShowShareButtons: true

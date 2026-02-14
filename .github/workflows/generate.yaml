@@ -7,12 +7,6 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
 
 defaults:
   run:
@@ -21,9 +15,16 @@ defaults:
 jobs:
   generate:
     runs-on: ubuntu-latest
-    env:
-      HUGO_VERSION: 0.147.0
     steps:
+      - name: Validate API key secret
+        env:
+          HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" != "true" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set. Configure it in Settings > Secrets > Actions."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -34,6 +35,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
 
       - name: Install Python dependencies
         run: pip install -r scripts/requirements.txt
@@ -52,7 +54,7 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Commit new post
+      - name: Commit and push new post
         if: steps.changes.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
@@ -60,38 +62,3 @@ jobs:
           git add content/
           git commit -m "post: $(date -u +%Y-%m-%d) - daily generated post"
           git push
-
-      - name: Install Hugo CLI
-        if: steps.changes.outputs.changed == 'true'
-        run: |
-          wget -O ${{ runner.temp }}/hugo.deb https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb \
-          && sudo dpkg -i ${{ runner.temp }}/hugo.deb
-
-      - name: Setup Pages
-        if: steps.changes.outputs.changed == 'true'
-        uses: actions/configure-pages@v5
-
-      - name: Build with Hugo
-        if: steps.changes.outputs.changed == 'true'
-        env:
-          HUGO_CACHEDIR: ${{ runner.temp }}/hugo_cache
-          HUGO_ENVIRONMENT: production
-          TZ: Europe/Berlin
-        run: hugo --gc --minify
-
-      - name: Upload artifact
-        if: steps.changes.outputs.changed == 'true'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./public
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: generate
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
