@@ -225,9 +225,7 @@ def _parse_topic_fallback(text: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def write_article(
-    client: anthropic.Anthropic, topic_data: dict, articles: list[dict]
-) -> str:
+def write_article(client: anthropic.Anthropic, topic_data: dict, articles: list[dict]) -> str:
     """Use Claude to write a deep-dive article in German."""
     # Build source summaries from fetched articles that match selected sources
     selected_sources = [s.lower() for s in topic_data.get("sources", [])]

@@ -116,17 +116,13 @@ class TestRequiredFields:
         assert any(f"Missing required field: {field}" in e for e in errors)
 
     def test_empty_title(self, tmp_path):
-        fm = _valid_frontmatter().replace(
-            'title: "Test Artikel über Robotik"', 'title: ""'
-        )
+        fm = _valid_frontmatter().replace('title: "Test Artikel über Robotik"', 'title: ""')
         filepath = _write_post(tmp_path, fm, _valid_body())
         errors = validate_post(filepath)
         assert any("Empty required field: title" in e for e in errors)
 
     def test_null_title(self, tmp_path):
-        fm = _valid_frontmatter().replace(
-            'title: "Test Artikel über Robotik"', "title:"
-        )
+        fm = _valid_frontmatter().replace('title: "Test Artikel über Robotik"', "title:")
         filepath = _write_post(tmp_path, fm, _valid_body())
         errors = validate_post(filepath)
         assert any("Empty required field: title" in e for e in errors)
@@ -144,25 +140,19 @@ class TestDateValidation:
         assert not any("date" in e.lower() for e in errors)
 
     def test_valid_iso_date_with_z(self, tmp_path):
-        fm = _valid_frontmatter().replace(
-            "date: 2026-02-14T08:00:00+01:00", "date: 2026-02-14T08:00:00Z"
-        )
+        fm = _valid_frontmatter().replace("date: 2026-02-14T08:00:00+01:00", "date: 2026-02-14T08:00:00Z")
         filepath = _write_post(tmp_path, fm, _valid_body())
         errors = validate_post(filepath)
         assert not any("Invalid date" in e for e in errors)
 
     def test_invalid_date_format(self, tmp_path):
-        fm = _valid_frontmatter().replace(
-            "date: 2026-02-14T08:00:00+01:00", 'date: "February 14, 2026"'
-        )
+        fm = _valid_frontmatter().replace("date: 2026-02-14T08:00:00+01:00", 'date: "February 14, 2026"')
         filepath = _write_post(tmp_path, fm, _valid_body())
         errors = validate_post(filepath)
         assert any("Invalid date format" in e for e in errors)
 
     def test_date_without_timezone(self, tmp_path):
-        fm = _valid_frontmatter().replace(
-            "date: 2026-02-14T08:00:00+01:00", 'date: "2026-02-14T08:00:00"'
-        )
+        fm = _valid_frontmatter().replace("date: 2026-02-14T08:00:00+01:00", 'date: "2026-02-14T08:00:00"')
         filepath = _write_post(tmp_path, fm, _valid_body())
         errors = validate_post(filepath)
         assert any("Invalid date format" in e for e in errors)
@@ -175,33 +165,25 @@ class TestDateValidation:
 
 class TestListFields:
     def test_tags_not_a_list(self, tmp_path):
-        fm = _valid_frontmatter().replace(
-            "tags:\n  - Robotik\n  - Test", 'tags: "just a string"'
-        )
+        fm = _valid_frontmatter().replace("tags:\n  - Robotik\n  - Test", 'tags: "just a string"')
         filepath = _write_post(tmp_path, fm, _valid_body())
         errors = validate_post(filepath)
         assert any("'tags' must be a list" in e for e in errors)
 
     def test_categories_not_a_list(self, tmp_path):
-        fm = _valid_frontmatter().replace(
-            "categories:\n  - Forschung", 'categories: "just a string"'
-        )
+        fm = _valid_frontmatter().replace("categories:\n  - Forschung", 'categories: "just a string"')
         filepath = _write_post(tmp_path, fm, _valid_body())
         errors = validate_post(filepath)
         assert any("'categories' must be a list" in e for e in errors)
 
     def test_empty_tags_list(self, tmp_path):
-        fm = _valid_frontmatter().replace(
-            "tags:\n  - Robotik\n  - Test", "tags: []"
-        )
+        fm = _valid_frontmatter().replace("tags:\n  - Robotik\n  - Test", "tags: []")
         filepath = _write_post(tmp_path, fm, _valid_body())
         errors = validate_post(filepath)
         assert any("'tags' must have at least one entry" in e for e in errors)
 
     def test_empty_categories_list(self, tmp_path):
-        fm = _valid_frontmatter().replace(
-            "categories:\n  - Forschung", "categories: []"
-        )
+        fm = _valid_frontmatter().replace("categories:\n  - Forschung", "categories: []")
         filepath = _write_post(tmp_path, fm, _valid_body())
         errors = validate_post(filepath)
         assert any("'categories' must have at least one entry" in e for e in errors)

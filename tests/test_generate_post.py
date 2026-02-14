@@ -171,7 +171,7 @@ class TestPostExistsForToday:
 class TestGetRecentTitles:
     def _write_post(self, posts_dir, filename, title):
         (posts_dir / filename).write_text(
-            f"---\ntitle: \"{title}\"\ndate: 2026-02-14T10:00:00+01:00\n"
+            f'---\ntitle: "{title}"\ndate: 2026-02-14T10:00:00+01:00\n'
             f"tags: [Robotik]\ncategories: [Industrie]\nsummary: test\n---\n\n## Heading\n\n{'word ' * 500}\n",
             encoding="utf-8",
         )
