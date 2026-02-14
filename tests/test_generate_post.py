@@ -3,7 +3,14 @@
 from unittest.mock import patch
 
 import yaml
-from generate_post import create_post, format_news_for_prompt, post_exists_for_today, slugify
+from generate_post import (
+    _build_recent_topics_block,
+    create_post,
+    format_news_for_prompt,
+    get_recent_titles,
+    post_exists_for_today,
+    slugify,
+)
 
 # ---------------------------------------------------------------------------
 # slugify()
@@ -154,6 +161,72 @@ class TestPostExistsForToday:
             patch("generate_post.get_today_str", return_value="2026-02-14"),
         ):
             assert post_exists_for_today() is False
+
+
+# ---------------------------------------------------------------------------
+# get_recent_titles() / _build_recent_topics_block()
+# ---------------------------------------------------------------------------
+
+
+class TestGetRecentTitles:
+    def _write_post(self, posts_dir, filename, title):
+        (posts_dir / filename).write_text(
+            f"---\ntitle: \"{title}\"\ndate: 2026-02-14T10:00:00+01:00\n"
+            f"tags: [Robotik]\ncategories: [Industrie]\nsummary: test\n---\n\n## Heading\n\n{'word ' * 500}\n",
+            encoding="utf-8",
+        )
+
+    def test_reads_titles_from_posts(self, tmp_path):
+        posts_dir = tmp_path / "content" / "posts"
+        posts_dir.mkdir(parents=True)
+        self._write_post(posts_dir, "2026-02-14-post-a.md", "Post A")
+        self._write_post(posts_dir, "2026-02-13-post-b.md", "Post B")
+
+        with patch("generate_post.CONTENT_DIR", posts_dir):
+            titles = get_recent_titles(days=7)
+        assert "Post A" in titles
+        assert "Post B" in titles
+
+    def test_skips_index_md(self, tmp_path):
+        posts_dir = tmp_path / "content" / "posts"
+        posts_dir.mkdir(parents=True)
+        (posts_dir / "_index.md").write_text("---\ntitle: Index\n---\n")
+        self._write_post(posts_dir, "2026-02-14-post-a.md", "Post A")
+
+        with patch("generate_post.CONTENT_DIR", posts_dir):
+            titles = get_recent_titles(days=7)
+        assert titles == ["Post A"]
+
+    def test_limits_to_days_param(self, tmp_path):
+        posts_dir = tmp_path / "content" / "posts"
+        posts_dir.mkdir(parents=True)
+        for i in range(5):
+            self._write_post(posts_dir, f"2026-02-{14 - i:02d}-post.md", f"Post {i}")
+
+        with patch("generate_post.CONTENT_DIR", posts_dir):
+            titles = get_recent_titles(days=3)
+        assert len(titles) == 3
+
+    def test_empty_dir_returns_empty(self, tmp_path):
+        posts_dir = tmp_path / "content" / "posts"
+        posts_dir.mkdir(parents=True)
+
+        with patch("generate_post.CONTENT_DIR", posts_dir):
+            assert get_recent_titles(days=7) == []
+
+
+class TestBuildRecentTopicsBlock:
+    def test_empty_when_no_posts(self):
+        with patch("generate_post.get_recent_titles", return_value=[]):
+            assert _build_recent_topics_block() == ""
+
+    def test_includes_titles_when_present(self):
+        with patch("generate_post.get_recent_titles", return_value=["Title A", "Title B"]):
+            block = _build_recent_topics_block()
+            assert "WICHTIG" in block
+            assert "Title A" in block
+            assert "Title B" in block
+            assert "ANDERES Thema" in block
 
 
 # ---------------------------------------------------------------------------

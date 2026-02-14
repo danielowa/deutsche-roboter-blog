@@ -23,6 +23,7 @@ import feedparser
 import yaml
 from config import (
     ARTICLE_WRITING_PROMPT,
+    ARTICLE_WRITING_SYSTEM,
     FETCH_TIMEOUT,
     MAX_ARTICLES_PER_FEED,
     MAX_TOTAL_ARTICLES,
@@ -49,6 +50,27 @@ def post_exists_for_today() -> bool:
     """Check if a post for today already exists."""
     today = get_today_str()
     return any(CONTENT_DIR.glob(f"{today}-*.md"))
+
+
+def get_recent_titles(days: int = 7) -> list[str]:
+    """Read titles from the most recent posts to avoid duplicate topics."""
+    titles = []
+    for md_file in sorted(CONTENT_DIR.glob("*.md"), reverse=True):
+        if md_file.name == "_index.md":
+            continue
+        try:
+            text = md_file.read_text(encoding="utf-8")
+            # Extract title from YAML frontmatter
+            fm_match = re.search(r"^---\s*\n(.*?)\n---", text, re.DOTALL)
+            if fm_match:
+                fm = yaml.safe_load(fm_match.group(1))
+                if isinstance(fm, dict) and fm.get("title"):
+                    titles.append(fm["title"])
+        except Exception:
+            continue
+        if len(titles) >= days:
+            break
+    return titles
 
 
 # ---------------------------------------------------------------------------
@@ -127,10 +149,27 @@ def format_news_for_prompt(articles: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _build_recent_topics_block() -> str:
+    """Build a prompt section listing recent titles to avoid duplicates."""
+    recent = get_recent_titles(days=7)
+    if not recent:
+        return ""
+    titles_list = "\n".join(f"- {t}" for t in recent)
+    return (
+        "WICHTIG: Die folgenden Themen wurden bereits in den letzten Tagen behandelt. "
+        "Wähle ein ANDERES Thema, das sich deutlich davon unterscheidet:\n"
+        f"{titles_list}\n\n"
+    )
+
+
 def select_topic(client: anthropic.Anthropic, articles: list[dict]) -> dict:
     """Use Claude to select the best topic from fetched news."""
     news_text = format_news_for_prompt(articles)
-    prompt = TOPIC_SELECTION_PROMPT.format(news_items=news_text)
+    recent_block = _build_recent_topics_block()
+    prompt = TOPIC_SELECTION_PROMPT.format(
+        news_items=news_text,
+        recent_topics_block=recent_block,
+    )
 
     print("  Asking Claude to select topic...")
     response = client.messages.create(
@@ -186,18 +225,35 @@ def _parse_topic_fallback(text: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def write_article(client: anthropic.Anthropic, topic_data: dict) -> str:
+def write_article(
+    client: anthropic.Anthropic, topic_data: dict, articles: list[dict]
+) -> str:
     """Use Claude to write a deep-dive article in German."""
+    # Build source summaries from fetched articles that match selected sources
+    selected_sources = [s.lower() for s in topic_data.get("sources", [])]
+    summaries = []
+    for a in articles:
+        if any(src in a["title"].lower() for src in selected_sources) or any(
+            a["title"].lower() in src for src in selected_sources
+        ):
+            summaries.append(f"- **{a['title']}** ({a['source']}): {a['summary']}")
+    # If no exact matches, include top 5 articles as context
+    if not summaries:
+        for a in articles[:5]:
+            summaries.append(f"- **{a['title']}** ({a['source']}): {a['summary']}")
+
     prompt = ARTICLE_WRITING_PROMPT.format(
         topic=topic_data.get("topic", ""),
         angle=topic_data.get("angle", ""),
         sources=", ".join(topic_data.get("sources", [])),
+        source_summaries="\n".join(summaries) if summaries else "Keine weiteren Details verfügbar.",
     )
 
     print("  Asking Claude to write article...")
     response = client.messages.create(
         model=MODEL,
         max_tokens=4096,
+        system=ARTICLE_WRITING_SYSTEM,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -349,7 +405,7 @@ def main() -> int:
 
     # Phase 3: WRITE
     print("\n[3/4] Writing article...")
-    article_text = write_article(client, topic_data)
+    article_text = write_article(client, topic_data, articles)
     if not article_text:
         print("ERROR: Claude did not return an article.")
         return 1

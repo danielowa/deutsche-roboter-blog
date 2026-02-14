@@ -77,7 +77,7 @@ Kriterien für die Auswahl:
 - Interesse für ein deutschsprachiges technisches Publikum
 - Bevorzuge Themen mit Bezug zu Forschung, neuen Technologien oder bedeutenden Industrieentwicklungen
 
-Antworte AUSSCHLIESSLICH im folgenden YAML-Format, ohne zusätzlichen Text:
+{recent_topics_block}Antworte AUSSCHLIESSLICH im folgenden YAML-Format, ohne zusätzlichen Text:
 
 ```yaml
 topic: "<Thema in einem Satz>"
