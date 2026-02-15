@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+  workflow_run:
+    workflows: ["Generate daily post"]
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
@@ -21,6 +25,8 @@ defaults:
 
 jobs:
   build:
+    # Skip if triggered by a failed generate workflow
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
       HUGO_VERSION: 0.147.0
